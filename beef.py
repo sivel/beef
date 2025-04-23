@@ -615,7 +615,6 @@ def main(argv: list[str] | None = None) -> None:
         print(f'{e}', file=sys.stderr)
         sys.exit(2)
     except Exception as e:
-        raise
         print(f'{e}', file=sys.stderr)
         sys.exit(1)
     else:
