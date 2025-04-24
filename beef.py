@@ -604,7 +604,20 @@ def run(run_config: RunConfig) -> None:
         pid.unlink(missing_ok=True)
 
 
+def _verify_vfkit() -> None:
+    if not shutil.which('vfkit'):
+        print(
+            (
+                'vfkit not found, please install vfkit '
+                '(https://github.com/crc-org/vfkit)'
+            ),
+            file=sys.stderr
+        )
+        sys.exit(1)
+
+
 def main(argv: list[str] | None = None) -> None:
+    _verify_vfkit()
     run_config = parse_args(argv)
 
     try:
