@@ -40,5 +40,5 @@ This example assumes that you have a `VM.bundle` created by the `InstallationToo
 Note: macOS requires running with `--gui`
 
 ```
-$ beef run --gui macos VM.Bundle
+$ beef run --gui macos VM.bundle
 ```
