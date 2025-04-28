@@ -52,6 +52,14 @@ clonefile = _LIBC.clonefile
 clonefile.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int)
 
 
+class _JSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, pathlib.Path):
+            return str(obj)
+
+        return super().default(obj)
+
+
 def generate_laa_mac() -> str:
     first_byte = random.randint(0x00, 0xFF)
     first_byte = (first_byte & 0b11111100) | 0b00000010
@@ -135,6 +143,8 @@ class RunConfig:
         for f in fields(self):
             value = getattr(self, f.name, None)
             if value is not None and f.type is pathlib.Path:
+                if not isinstance(value, pathlib.Path):
+                    value = pathlib.Path(value)
                 setattr(
                     self,
                     f.name,
@@ -164,8 +174,14 @@ class RunConfig:
     def _parse_volumes(self, value):
         volumes = []
         for v in value:
-            if not isinstance(v, str):
-                volumes.append(v)
+            if isinstance(v, (list, tuple)):
+                if isinstance(v[0], pathlib.Path):
+                    volumes.append(tuple(v))
+                else:
+                    volumes.append((
+                        pathlib.Path(v[0]).resolve(),
+                        v[1]
+                    ))
                 continue
             src, dst = v.split(':', 1)
             volumes.append((
@@ -176,6 +192,7 @@ class RunConfig:
 
     @classmethod
     def from_argparse(cls, args: argparse.Namespace) -> t.Self:
+        delattr(args, 'state_file')
         return cls(**vars(args))  # pylint: disable=missing-kwoa
 
     @property
@@ -210,13 +227,17 @@ class RunConfig:
         run_config.pop('action')
         state_file = self.state_file
         state_file.parent.mkdir(exist_ok=True)
-        with (state_file).open('wb') as f:
-            pickle.dump(run_config, f)
+        with (state_file).open('w') as f:
+            json.dump(run_config, f, indent=4, cls=_JSONEncoder)
 
     @classmethod
     def read(cls, run_config: pathlib.Path) -> t.Self:
         with run_config.open('rb') as f:
-            return cls(**pickle.load(f))
+            if f.read(1) == b'\x80':
+                f.seek(0)
+                return cls(**pickle.load(f))
+            f.seek(0)
+            return cls(**json.load(f))
 
 
 def parse_args(argv: list[str] | None = None) -> RunConfig:
@@ -225,7 +246,11 @@ def parse_args(argv: list[str] | None = None) -> RunConfig:
 
     name_subparsers.add_parser(  # type: ignore[attr-defined]
         'run', exit_on_error=False, add_help=False
-    ).add_argument('vm').container.set_defaults(
+    ).add_argument('vm').container.add_argument(
+        'src_image', nargs='?'
+    ).container.add_argument(
+        '--state-file', type=pathlib.Path
+    ).container.set_defaults(
         action=run
     )
     for func in (stop, status, rm):
@@ -243,11 +268,15 @@ def parse_args(argv: list[str] | None = None) -> RunConfig:
     try:
         name_args, _ = name_parser.parse_known_args(argv)
     except argparse.ArgumentError:
-        vm = ''
-        action = run
-    else:
-        vm = getattr(name_args, 'vm', '')
-        action = name_args.action
+        name_args = argparse.Namespace()
+
+    vm = getattr(name_args, 'vm', '')
+    state_file = getattr(name_args, 'state_file', None)
+    src_image = getattr(name_args, 'src_image', None)
+    action = getattr(name_args, 'action', run)
+
+    if state_file and not src_image:
+        raise ValueError('src_image required')
 
     run_config = RunConfig(vm=vm, action=action)
     if action.__name__ == 'ls':
@@ -257,7 +286,7 @@ def parse_args(argv: list[str] | None = None) -> RunConfig:
         )
         return run_config
 
-    state_file = run_config.state_file
+    state_file = state_file or run_config.state_file
     if vm and state_file.exists():
         run_config = RunConfig.read(state_file)
         run_config.action = action
@@ -311,14 +340,16 @@ def parse_args(argv: list[str] | None = None) -> RunConfig:
             flags.append(alias)
 
         run_parser.add_argument(*flags, **kwargs)
+    run_parser.add_argument('--state-file', help=argparse.SUPPRESS)
 
     args = parser.parse_args(argv)
-    if not state_file.exists() or vm:  # (vm and args.force):
+    if not state_file.exists() or vm:
         run_config = RunConfig.from_argparse(args)
 
     run_config.action = run
 
-    if state_file.exists() and not run_config.force and run_config.src_image:
+    vm_disk = run_config.vm_disk
+    if vm_disk.exists() and not run_config.force and run_config.src_image:
         run_config.src_image = None
 
     if args.attach:
