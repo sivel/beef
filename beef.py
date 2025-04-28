@@ -119,9 +119,12 @@ class RunConfig:
         metadata={'help': 'MAC address'},
     )
     gui: bool = field(default=False, metadata={'help': 'Enable GUI'})
-    detach: bool = field(
+    attach: bool = field(
         default=False,
-        metadata={'help': 'Detach and run in background', 'alias': '-d'},
+        metadata={
+            'help': 'Attach and to VM consolel and run in foreground',
+            'alias': '-a'
+        },
     )
     force: bool = field(
         default=False,
@@ -202,7 +205,7 @@ class RunConfig:
     def write(self) -> None:
         run_config = asdict(self)
         run_config.pop('force')
-        run_config.pop('detach')
+        run_config.pop('attach')
         run_config.pop('src_image')
         run_config.pop('action')
         state_file = self.state_file
@@ -318,8 +321,8 @@ def parse_args(argv: list[str] | None = None) -> RunConfig:
     if state_file.exists() and not run_config.force and run_config.src_image:
         run_config.src_image = None
 
-    if args.detach:
-        run_config.detach = args.detach
+    if args.attach:
+        run_config.attach = args.attach
 
     return run_config
 
@@ -571,11 +574,11 @@ def run(run_config: RunConfig) -> None:
             '--gui',
         ])
 
-    if not run_config.detach:
+    if run_config.attach:
         cmd.extend(['--device', 'virtio-serial,stdio'])
 
     popen_kwargs: dict[str, t.Any] = {}
-    if run_config.detach:
+    if not run_config.attach:
         popen_kwargs.update({
             'start_new_session': True,
             'stdin': subprocess.PIPE,
@@ -594,7 +597,7 @@ def run(run_config: RunConfig) -> None:
         time.sleep(1)
     status(run_config)
 
-    if run_config.detach:
+    if not run_config.attach:
         return
 
     try:
@@ -631,7 +634,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f'{e}', file=sys.stderr)
         sys.exit(1)
     else:
-        if run_config.action is run and not run_config.detach:
+        if run_config.action is run and run_config.attach:
             os.system('reset')
 
 
