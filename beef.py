@@ -413,6 +413,10 @@ def _make_sock(run_config: RunConfig):
 
 
 def rm(run_config: RunConfig):
+    if run_config.pid.is_file():
+        raise RuntimeError(
+            f'{run_config.vm} is running'
+        )
     shutil.rmtree(run_config.vm_disk.parent)
 
 
