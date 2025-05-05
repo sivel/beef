@@ -54,6 +54,8 @@ _LIBC = ctypes.CDLL(None)
 clonefile = _LIBC.clonefile
 clonefile.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int)
 
+_DEFAULT_GUI_RESOLUTION = '1024x800'
+
 
 class _JSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -73,6 +75,14 @@ def generate_laa_mac() -> str:
 class Resize(str):
     def __new__(cls, value):
         int(value)
+        return str(value)
+
+
+class Resolution(str):
+    def __new__(cls, value):
+        width, height = value.split('x')
+        int(width)
+        int(height)
         return str(value)
 
 
@@ -135,7 +145,15 @@ class RunConfig:
         default=generate_laa_mac(),
         metadata={'help': 'MAC address'},
     )
-    gui: bool = field(default=False, metadata={'help': 'Enable GUI'})
+    gui: Resolution | None = field(
+        default=None,
+        metadata={
+            'help': 'Enable GUI. Automatically enabled if VM is macOS',
+            'nargs': '?',
+            'const': _DEFAULT_GUI_RESOLUTION,
+            'metavar': 'WxH',
+        }
+    )
     attach: bool = field(
         default=False,
         metadata={
@@ -319,6 +337,7 @@ def parse_args(argv: list[str] | None = None) -> RunConfig:
         name = kwargs.pop('name', None)
         alias = kwargs.pop('alias', None)
         posarg = kwargs.pop('posarg', False)
+        const = kwargs.get('const', None)
         default = getattr(run_config, f.name)
         if not posarg:
             kwargs['default'] = default
@@ -333,8 +352,8 @@ def parse_args(argv: list[str] | None = None) -> RunConfig:
             kwargs['action'] = 'store_true'
             kwargs.pop('type')
 
-        if arg_type is not bool and default:
-            kwargs['help'] += f'. Default: {default}'
+        if arg_type is not bool and any((const, default)):
+            kwargs['help'] += f'. Default: {const or default}'
 
         if name:
             flags = [name]
@@ -611,10 +630,12 @@ def run(run_config: RunConfig) -> None:
         cmd.extend(['--cloud-init', f'{user_data}'])
 
     if is_mac or run_config.gui:
+        resolution = run_config.gui or _DEFAULT_GUI_RESOLUTION
+        width, height = resolution.split('x')
         cmd.extend([
             '--device', 'virtio-input,keyboard',
             '--device', 'virtio-input,pointing',
-            '--device', 'virtio-gpu,width=1024,height=800',
+            '--device', f'virtio-gpu,width={width},height={height}',
             '--gui',
         ])
 
