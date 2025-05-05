@@ -70,6 +70,12 @@ def generate_laa_mac() -> str:
     return ':'.join(f'{b:02x}' for b in mac)
 
 
+class Resize(str):
+    def __new__(cls, value):
+        int(value)
+        return str(value)
+
+
 @dataclass(kw_only=True, slots=True)
 class RunConfig:
     action: t.Callable[[t.Self], None] | None = field(
@@ -89,7 +95,7 @@ class RunConfig:
         default=pathlib.Path.home() / 'vms' / 'storage',
         metadata={'help': 'Path to vmstorage dir'},
     )
-    resize: str = field(
+    resize: Resize = field(
         default='+10',
         metadata={
             'help': (
