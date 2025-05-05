@@ -42,6 +42,8 @@ import types
 import typing as t
 from dataclasses import asdict, dataclass, field, fields
 
+__version__ = '0.0.1'
+
 
 CLONE_NOFOLLOW = 1  # Don't follow symbolic links
 CLONE_NOOWNERCOPY = 2  # Don't copy ownership information from source

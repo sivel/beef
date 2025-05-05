@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beef"
+authors = [
+    {name = "Matt Martz", email = "matt@sivel.net"},
+]
+description = "The Beefcake macOS Virtualization lifecycle manager"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: System :: Installation/Setup",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/sivel/beef"
+Documentation = "https://github.com/sivel/beef"
+Repository = "https://github.com/sivel/beef"
+Issues = "https://github.com/sivel/beef/issues"
+
+[project.scripts]
+beef = "beef:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "beef.__version__"}
