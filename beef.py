@@ -35,6 +35,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import termios
 import textwrap
 import time
 import types
@@ -646,6 +647,16 @@ def run(run_config: RunConfig) -> None:
         pid.unlink(missing_ok=True)
 
 
+@contextlib.contextmanager
+def _repair_stdin():
+    fd = sys.stdin.fileno()
+    attrs = termios.tcgetattr(fd)
+    try:
+        yield
+    finally:
+        termios.tcsetattr(fd, termios.TCSANOW, attrs)
+
+
 def _verify_vfkit() -> None:
     if not shutil.which('vfkit'):
         print(
@@ -663,7 +674,8 @@ def main(argv: list[str] | None = None) -> None:
     run_config = parse_args(argv)
 
     try:
-        run_config.action(run_config)  # type: ignore[misc]
+        with _repair_stdin():
+            run_config.action(run_config)  # type: ignore[misc]
     except KeyboardInterrupt:
         pass
     except RuntimeError as e:
@@ -672,9 +684,6 @@ def main(argv: list[str] | None = None) -> None:
     except Exception as e:
         print(f'{e}', file=sys.stderr)
         sys.exit(1)
-    else:
-        if run_config.action is run and run_config.attach:
-            os.system('reset')
 
 
 if __name__ == '__main__':
