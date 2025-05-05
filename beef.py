@@ -633,11 +633,10 @@ def run(run_config: RunConfig) -> None:
         if rest_sock.is_socket():
             break
         time.sleep(1)
-    json.dump(
+    print(json.dumps(
         status(run_config, ret=True),
-        sys.stdout,
         indent=4,
-    )
+    ))
 
     if not run_config.attach:
         return
