@@ -265,6 +265,12 @@ def parse_args(
     parents = [vm_parser, storage_parser]
 
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--version',
+        action='version',
+        version=f'%(prog)s {__version__}'
+    )
+
     subparsers = parser.add_subparsers(dest='action', required=True)
     run_parser = subparsers.add_parser(
         'run',
