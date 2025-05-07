@@ -206,7 +206,7 @@ class RunConfig:
 
     @functools.cached_property
     def state_file(self) -> pathlib.Path:
-        return self.storage / self.vm / 'run_config'
+        return self.storage / self.vm / 'config.json'
 
     def write(self) -> None:
         run_config = asdict(self)
