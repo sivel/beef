@@ -613,7 +613,7 @@ def start(run_config: RunConfig) -> None:
     if run_config.attach:
         cmd.extend(['--device', 'virtio-serial,stdio'])
 
-    popen_kwargs: dict[str, t.Any] = {}
+    popen_kwargs: dict[str, t.Any] = {'text': True}
     if not run_config.attach:
         popen_kwargs.update({
             'start_new_session': True,
@@ -631,6 +631,14 @@ def start(run_config: RunConfig) -> None:
         if rest_sock.is_socket():
             break
         time.sleep(1)
+
+    rc = p.poll()
+    if rc is not None:
+        stdout, _ = p.communicate()
+        rest_sock.unlink(missing_ok=True)
+        pid.unlink(missing_ok=True)
+        raise RuntimeError(f'{run_config.vm} failed to start: {stdout}')
+
     print(json.dumps(
         status(run_config, ret=True),
         indent=4,
