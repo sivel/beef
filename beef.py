@@ -502,7 +502,7 @@ def status(
                 GET /vm/state HTTP/1.1
                 Host: localhost
 
-            ''').lstrip().encode())
+            ''').lstrip().encode('iso8859-1'))
             resp = sock.recv(1024).decode()
     except (RuntimeError, socket.error):
         rc = 2
@@ -534,7 +534,7 @@ def stop(run_config: RunConfig) -> None:
             Content-Length: 17
 
             {"state": "Stop"}
-        ''').lstrip().encode())
+        ''').lstrip().encode('iso8859-1'))
         if sock.recv(21) != b'HTTP/1.1 202 Accepted':
             raise RuntimeError(f'Could not issue stop to {run_config.vm}')
     run_config.pid.unlink()
