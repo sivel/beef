@@ -47,8 +47,9 @@ from dataclasses import asdict, dataclass, field, fields
 
 try:
     import argcomplete
+    HAS_ARGCOMPLETE = True
 except ModuleNotFoundError:
-    argcomplete = None  # type: ignore[assignment]
+    HAS_ARGCOMPLETE = False
 
 __version__ = '0.0.1'
 
@@ -136,11 +137,11 @@ class RunConfig:
                     f.name,
                     value.resolve()
                 )
-            elif f.name == 'volumes':
+            elif value and f.name == 'volumes':
                 setattr(
                     self,
                     f.name,
-                    self._parse_volumes(value),  # type: ignore[arg-type]
+                    self._parse_volumes(value),
                 )
 
     @t.overload
@@ -181,7 +182,7 @@ class RunConfig:
         valid = set(f.name for f in fields(cls))
         return cls(
             **{k: v for k, v in vars(args).items() if k in valid}
-        )  # pylint: disable=missing-kwoa
+        )
 
     @functools.cached_property
     def vm_storage(self) -> pathlib.Path:
@@ -246,12 +247,13 @@ def parse_args(
     )
 
     run_common_parser = argparse.ArgumentParser(add_help=False)
-    run_common_parser.add_argument(  # type: ignore[attr-defined]
+    run_common_parser.add_argument(
         '--attach', '-a',
         action='store_true',
         default=False,
         help='Attach and to VM consolel and run in foreground',
-    ).container.add_argument(
+    )
+    run_common_parser.add_argument(
         '--gui',
         nargs='?',
         const=_DEFAULT_GUI_RESOLUTION,
@@ -370,7 +372,7 @@ def parse_args(
         action=ls
     )
 
-    if argcomplete:
+    if HAS_ARGCOMPLETE:
         argcomplete.autocomplete(parser)
     args = parser.parse_args(argv)
 
@@ -391,7 +393,7 @@ def parse_args(
         args.vm = ''
         run_config = RunConfig.from_argparse(args)
 
-        action = functools.partial(  # type: ignore[call-arg]
+        action = functools.partial(
             ls,
             use_json=args.json
         )
@@ -673,7 +675,7 @@ def run(run_config: RunConfig) -> None:
                          'MachineIdentifier'):
                 shutil.copy2(src_image / file, run_config.vm_storage)
 
-            src_image = src_image.joinpath(  # type: ignore[union-attr]
+            src_image = src_image.joinpath(
                 'Disk.img'
             )
 
@@ -746,7 +748,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         action, run_config = parse_args(argv)
         with _repair_stdin():
-            action(run_config)  # type: ignore[misc]
+            action(run_config)
     except KeyboardInterrupt:
         pass
     except RuntimeError as e:
