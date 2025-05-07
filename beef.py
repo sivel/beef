@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# PYTHON_ARGCOMPLETE_OK
+#
 # MIT License
 #
 # Copyright (c) Matt Martz <matt@sivel.net>
@@ -22,6 +24,7 @@
 # SOFTWARE.
 
 import argparse
+import collections.abc as c
 import contextlib
 import ctypes
 import functools
@@ -41,6 +44,11 @@ import time
 import types
 import typing as t
 from dataclasses import asdict, dataclass, field, fields
+
+try:
+    import argcomplete
+except ModuleNotFoundError:
+    argcomplete = None  # type: ignore[assignment]
 
 __version__ = '0.0.1'
 
@@ -65,6 +73,15 @@ class _JSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def storage_completer(
+        prefix: str,
+        parsed_args: argparse.Namespace,
+        **kwargs
+) -> c.Iterator:
+    storage = pathlib.Path(parsed_args.storage)
+    return (p.name for p in storage.glob(f'{prefix}*') if p.is_dir())
+
+
 def generate_laa_mac() -> str:
     first_byte = random.randint(0x00, 0xFF)
     first_byte = (first_byte & 0b11111100) | 0b00000010
@@ -74,7 +91,8 @@ def generate_laa_mac() -> str:
 
 class Resize(str):
     def __new__(cls, value):
-        int(value)
+        if int(value) < 0:
+            raise ValueError('negative values not supported')
         return str(value)
 
 
@@ -86,90 +104,31 @@ class Resolution(str):
         return str(value)
 
 
-@dataclass(kw_only=True, slots=True)
+@dataclass(kw_only=True, slots=False)
 class RunConfig:
-    action: t.Callable[[t.Self], None] | None = field(
-        default=None,
-        metadata={'noarg': True}
-    )
-    vm: str = field(metadata={'help': 'Name of VM', 'posarg': True})
-    src_image: pathlib.Path | None = field(
-        default=None,
-        metadata={
-            'nargs': '?',
-            'help': 'Path to raw cloud image',
-            'posarg': True,
-        },
-    )
-    storage: pathlib.Path = field(
-        default=pathlib.Path.home() / 'vms' / 'storage',
-        metadata={'help': 'Path to vmstorage dir'},
-    )
-    resize: Resize = field(
-        default='+10',
-        metadata={
-            'help': (
-                'Resize the disk in GB. Can be exact, or start with + or - '
-                'to indicate a relative size change'
-            )
-        },
-    )
-    cpus: int = field(default=2, metadata={'help': 'Number of CPUs'})
-    memory: int = field(
-        default=2048,
-        metadata={'help': 'Amount of memory in MB'},
-    )
-    user_data: pathlib.Path = field(
-        default=pathlib.Path.home() / 'vms' / 'user-data',
-        metadata={
-            'name': '--user-data',
-            'dest': 'user_data',
-            'help': 'Path to cloud-init user_data file',
-        },
-    )
+    vm: str
+    src_image: pathlib.Path | None = None
+    storage: pathlib.Path
+    resize: Resize | None = None
+    cpus: int | None = None
+    memory: int | None = None
+    user_data: pathlib.Path | None = None
     volumes: list[tuple[pathlib.Path, str]] = field(
         default_factory=list,
-        metadata={
-            'name': '-v',
-            'dest': 'volumes',
-            'action': 'append',
-            'type': str,
-            'help': (
-                'Volumes to mount into the VM. May be specified multiple '
-                'times'
-            ),
-            'metavar': 'src:dst',
-        }
     )
-    mac: str = field(
-        default=generate_laa_mac(),
-        metadata={'help': 'MAC address'},
-    )
-    gui: Resolution | None = field(
-        default=None,
-        metadata={
-            'help': 'Enable GUI. Automatically enabled if VM is macOS',
-            'nargs': '?',
-            'const': _DEFAULT_GUI_RESOLUTION,
-            'metavar': 'WxH',
-        }
-    )
-    attach: bool = field(
-        default=False,
-        metadata={
-            'help': 'Attach and to VM consolel and run in foreground',
-            'alias': '-a'
-        },
-    )
-    force: bool = field(
-        default=False,
-        metadata={'help': 'Force rebuild of VM', 'alias': '-f'},
-    )
+    mac: str | None = None
+    gui: Resolution | None = None
+    attach: bool = False
+    force: bool = False
 
     def __post_init__(self) -> None:
         for f in fields(self):
             value = getattr(self, f.name, None)
-            if value is not None and f.type is pathlib.Path:
+            if isinstance(f.type, types.UnionType):
+                f_type = f.type.__args__[0]
+            else:
+                f_type = f.type
+            if value is not None and f_type is pathlib.Path:
                 if not isinstance(value, pathlib.Path):
                     value = pathlib.Path(value)
                 setattr(
@@ -219,14 +178,16 @@ class RunConfig:
 
     @classmethod
     def from_argparse(cls, args: argparse.Namespace) -> t.Self:
-        delattr(args, 'state_file')
-        return cls(**vars(args))  # pylint: disable=missing-kwoa
+        valid = set(f.name for f in fields(cls))
+        return cls(
+            **{k: v for k, v in vars(args).items() if k in valid}
+        )  # pylint: disable=missing-kwoa
 
-    @property
+    @functools.cached_property
     def vm_storage(self) -> pathlib.Path:
         return pathlib.Path(self.storage).joinpath(self.vm)
 
-    @property
+    @functools.cached_property
     def vm_disk(self) -> pathlib.Path:
         return pathlib.Path(
             self.storage
@@ -234,15 +195,15 @@ class RunConfig:
             self.vm, self.vm
         ).with_suffix('.raw').resolve()
 
-    @property
+    @functools.cached_property
     def sock(self) -> pathlib.Path:
         return self.vm_disk.with_suffix('.sock')
 
-    @property
+    @functools.cached_property
     def pid(self) -> pathlib.Path:
         return self.vm_disk.with_suffix('.pid')
 
-    @property
+    @functools.cached_property
     def state_file(self) -> pathlib.Path:
         return self.storage / self.vm / 'run_config'
 
@@ -250,16 +211,16 @@ class RunConfig:
         run_config = asdict(self)
         run_config.pop('force')
         run_config.pop('attach')
-        run_config.pop('src_image')
-        run_config.pop('action')
         state_file = self.state_file
         state_file.parent.mkdir(exist_ok=True)
         with (state_file).open('w') as f:
             json.dump(run_config, f, indent=4, cls=_JSONEncoder)
 
     @classmethod
-    def read(cls, run_config: pathlib.Path) -> t.Self:
-        with run_config.open('rb') as f:
+    def read(cls, state_file: pathlib.Path) -> t.Self:
+        if not state_file.is_file():
+            raise ValueError(f'No such VM: {state_file.parent.name}')
+        with state_file.open('rb') as f:
             if f.read(1) == b'\x80':
                 f.seek(0)
                 return cls(**pickle.load(f))
@@ -267,123 +228,172 @@ class RunConfig:
             return cls(**json.load(f))
 
 
-def parse_args(argv: list[str] | None = None) -> RunConfig:
-    name_parser = argparse.ArgumentParser(exit_on_error=False, add_help=False)
-    name_subparsers = name_parser.add_subparsers(dest='action', required=True)
+def parse_args(
+        argv: list[str] | None = None
+) -> tuple[t.Callable[[RunConfig], None], RunConfig]:
+    vm_parser = argparse.ArgumentParser(add_help=False)
+    vm_parser.add_argument(  # type: ignore[attr-defined]
+        'vm',
+        help='Name of VM'
+    ).completer = storage_completer
 
-    name_subparsers.add_parser(  # type: ignore[attr-defined]
-        'run', exit_on_error=False, add_help=False
-    ).add_argument('vm').container.add_argument(
-        'src_image', nargs='?'
-    ).container.add_argument(
-        '--state-file', type=pathlib.Path
-    ).container.set_defaults(
-        action=run
+    storage_parser = argparse.ArgumentParser(add_help=False)
+    storage_parser.add_argument(
+        '--storage',
+        default=pathlib.Path.home() / 'vms' / 'storage',
+        type=pathlib.Path,
+        help='Path to vmstorage dir. Default: %(default)s',
     )
-    for func in (stop, status, rm):
-        name_subparsers.add_parser(  # type: ignore[attr-defined]
-            func.__name__, exit_on_error=False
-        ).add_argument('vm').container.set_defaults(
+
+    run_common_parser = argparse.ArgumentParser(add_help=False)
+    run_common_parser.add_argument(  # type: ignore[attr-defined]
+        '--attach', '-a',
+        action='store_true',
+        default=False,
+        help='Attach and to VM consolel and run in foreground',
+    ).container.add_argument(
+        '--gui',
+        nargs='?',
+        const=_DEFAULT_GUI_RESOLUTION,
+        help=(
+            'Enable GUI. Automatically enabled if VM is macOS. '
+            'Defaults: %(const)s'
+        ),
+        metavar='WxH',
+    )
+
+    parents = [vm_parser, storage_parser]
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='action', required=True)
+    run_parser = subparsers.add_parser(
+        'run',
+        help=run.__doc__,
+        parents=parents + [run_common_parser],
+    )
+    run_parser.set_defaults(
+        action=run,
+    )
+
+    run_parser.add_argument(
+        'src_image',
+        nargs='?',
+        help='Path to raw cloud image',
+        type=pathlib.Path,
+    )
+    run_parser.add_argument(
+        '--resize',
+        default=Resize('+10'),
+        help=(
+            'Resize the disk in GB. Can be exact, or start with + '
+            'to indicate a relative size change. Default: %(default)s'
+        ),
+        type=Resize,
+    )
+    run_parser.add_argument(
+        '--cpus',
+        default=2,
+        help='Number of CPUs. Default %(default)s',
+        type=int,
+    )
+    run_parser.add_argument(
+        '--memory',
+        default=2048,
+        help='Amount of memory in MB. Default %(default)s',
+        type=int,
+    )
+    run_parser.add_argument(
+        '--user-data',
+        default=pathlib.Path.home() / 'vms' / 'user-data',
+        help='Path to cloud-init user_data file. Default %(default)s',
+        type=pathlib.Path,
+    )
+    run_parser.add_argument(
+        '--volume', '-v',
+        dest='volumes',
+        action='append',
+        default=[],
+        help=(
+            'Volumes to mount into the VM. May be specified multiple '
+            'times'
+        ),
+        metavar='src:dst',
+    )
+    run_parser.add_argument(
+        '--mac',
+        default=generate_laa_mac(),
+        help='MAC address. Default: %(default)s',
+    )
+    run_parser.add_argument(
+        '--force', '-f',
+        action='store_true',
+        default=False,
+        help='Force recreation of VM',
+    )
+    run_parser.add_argument(
+        '--state-file',
+        type=pathlib.Path,
+        help=argparse.SUPPRESS
+    )
+
+    subparsers.add_parser(
+        'start',
+        help=start.__doc__,
+        parents=parents + [run_common_parser],
+    ).set_defaults(
+        action=start,
+    )
+
+    for func in (stop, rm, status):
+        subparsers.add_parser(
+            func.__name__,
+            help=func.__doc__,
+            parents=parents,
+        ).set_defaults(
             action=func
         )
-    name_subparsers.add_parser(  # type: ignore[attr-defined]
-        'ls', exit_on_error=False
-    ).add_argument('--json', action='store_true').container.set_defaults(
+
+    subparsers.add_parser(  # type: ignore[attr-defined]
+        'ls',
+        help=ls.__doc__,
+        parents=[storage_parser],
+    ).add_argument(
+        '--json',
+        action='store_true'
+    ).container.set_defaults(
         action=ls
     )
 
-    try:
-        name_args, _ = name_parser.parse_known_args(argv)
-    except argparse.ArgumentError:
-        name_args = argparse.Namespace()
-
-    vm = getattr(name_args, 'vm', '')
-    state_file = getattr(name_args, 'state_file', None)
-    src_image = getattr(name_args, 'src_image', None)
-    action = getattr(name_args, 'action', run)
-
-    if state_file and not src_image:
-        raise ValueError('src_image required')
-
-    run_config = RunConfig(vm=vm, action=action)
-    if action.__name__ == 'ls':
-        run_config.action = functools.partial(  # type: ignore[call-arg]
-            action,
-            use_json=name_args.json
-        )
-        return run_config
-
-    state_file = state_file or run_config.state_file
-    if vm and state_file.exists():
-        run_config = RunConfig.read(state_file)
-        run_config.action = action
-
-    if action.__name__ in ('stop', 'status', 'rm'):
-        return run_config
-
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(required=True)
-    run_parser = subparsers.add_parser('run')
-
-    for name in ('stop', 'status', 'rm'):
-        subparsers.add_parser(name).add_argument('vm', help='Name of VM')
-    subparsers.add_parser('ls').add_argument('--json', action='store_true')
-
-    for f in fields(RunConfig):
-        kwargs = f.metadata.copy()
-        if kwargs.get('noarg', False):
-            continue
-
-        name = kwargs.pop('name', None)
-        alias = kwargs.pop('alias', None)
-        posarg = kwargs.pop('posarg', False)
-        const = kwargs.get('const', None)
-        default = getattr(run_config, f.name)
-        if not posarg:
-            kwargs['default'] = default
-
-        if not (arg_type := kwargs.get('type')):
-            if isinstance(f.type, types.UnionType):
-                kwargs['type'] = arg_type = f.type.__args__[0]
-            else:
-                kwargs['type'] = arg_type = f.type
-
-        if arg_type is bool:
-            kwargs['action'] = 'store_true'
-            kwargs.pop('type')
-
-        if arg_type is not bool and any((const, default)):
-            kwargs['help'] += f'. Default: {const or default}'
-
-        if name:
-            flags = [name]
-        elif posarg:
-            flags = [f.name]
-        elif len(f.name) == 1:
-            flags = [f'-{f.name}']
-        else:
-            flags = [f'--{f.name}']
-
-        if alias:
-            flags.append(alias)
-
-        run_parser.add_argument(*flags, **kwargs)
-    run_parser.add_argument('--state-file', help=argparse.SUPPRESS)
-
+    if argcomplete:
+        argcomplete.autocomplete(parser)
     args = parser.parse_args(argv)
-    if not state_file.exists() or vm:
+
+    action = args.action
+    if action is run:
+        state_file = args.state_file
+        if state_file and state_file.exists():
+            run_config = RunConfig.read(args.state_file)
+            run_config.force = args.force
+            run_config.attach = args.attach
+        else:
+            run_config = RunConfig.from_argparse(args)
+    elif action is start:
+        run_config = RunConfig.read(
+            RunConfig.from_argparse(args).state_file
+        )
+    elif action is ls:
+        args.vm = ''
         run_config = RunConfig.from_argparse(args)
 
-    run_config.action = run
+        action = functools.partial(  # type: ignore[call-arg]
+            ls,
+            use_json=args.json
+        )
 
-    vm_disk = run_config.vm_disk
-    if vm_disk.exists() and not run_config.force and run_config.src_image:
-        run_config.src_image = None
+    else:
+        run_config = RunConfig.from_argparse(args)
 
-    if args.attach:
-        run_config.attach = args.attach
-
-    return run_config
+    return action, run_config
 
 
 def get_vm_ip(mac) -> str:
@@ -440,7 +450,8 @@ def _make_sock(run_config: RunConfig):
         yield sock
 
 
-def rm(run_config: RunConfig):
+def rm(run_config: RunConfig) -> None:
+    """Remove a VM"""
     if run_config.pid.is_file():
         raise RuntimeError(
             f'{run_config.vm} is running'
@@ -449,12 +460,15 @@ def rm(run_config: RunConfig):
 
 
 def ls(run_config: RunConfig, use_json=False) -> None:
+    """List the status of VMs"""
     out = {}
     for vm_disk in run_config.storage.glob('*/*.raw'):
         vm = vm_disk.parent.name
         ip = True if use_json else False
         state = status(
-            RunConfig.read(RunConfig(vm=vm).state_file),
+            RunConfig.read(
+                RunConfig(vm=vm, storage=run_config.storage).state_file
+            ),
             ip=ip,
             ret=True
         )
@@ -472,6 +486,7 @@ def status(
         ip: bool = True,
         ret: bool = False
 ) -> dict[str, t.Any] | t.NoReturn:
+    """Get the status of a VM"""
     data: dict[str, t.Any]
     try:
         with _make_sock(run_config) as sock:
@@ -502,6 +517,7 @@ def status(
 
 
 def stop(run_config: RunConfig) -> None:
+    """Stop a VM"""
     with _make_sock(run_config) as sock:
         sock.sendall(textwrap.dedent('''
             POST /vm/state HTTP/1.1
@@ -517,9 +533,8 @@ def stop(run_config: RunConfig) -> None:
     run_config.sock.unlink()
 
 
-def run(run_config: RunConfig) -> None:
-    run_config.storage.mkdir(exist_ok=True)
-
+def start(run_config: RunConfig) -> None:
+    """Start an existing VM"""
     pid = run_config.pid
     if pid.is_file():
         status(run_config, ip=False, ret=True)
@@ -528,50 +543,14 @@ def run(run_config: RunConfig) -> None:
                 f'{run_config.vm}[{int(pid.read_text())}] is already running'
             )
 
-    run_config.write()
-
-    run_config.vm_storage.mkdir(exist_ok=True)
-    if run_config.force and run_config.src_image:
-        run_config.vm_disk.unlink(missing_ok=True)
-
-    src_image = run_config.src_image
-    if src_image:
-        if run_config.vm_disk.is_file():
-            raise ValueError(f'{run_config.vm_disk} already exists')
-
-        if src_image.is_dir() and src_image.suffix == '.bundle':
-            for file in ('AuxiliaryStorage', 'HardwareModel',
-                         'MachineIdentifier'):
-                shutil.copy2(src_image / file, run_config.vm_storage)
-
-            src_image = src_image.joinpath(  # type: ignore[union-attr]
-                'Disk.img'
-            )
-
-        rc = clonefile(
-            bytes(src_image),
-            bytes(run_config.vm_disk),
-            CLONE_NOFOLLOW
-        )
-        if rc == -1:
-            raise OSError(
-                f'Could not clone {src_image} to '
-                f'{run_config.vm_disk}'
-            )
-
     is_mac = run_config.vm_storage.joinpath('AuxiliaryStorage').exists()
 
     if not run_config.vm_disk.is_file():
         raise ValueError(
-            f'Could not locate disk image for {run_config.vm_disk.stem}'
+            f'Could not locate disk image for {run_config.vm}'
         )
 
-    if run_config.resize and (run_config.src_image or run_config.force):
-        resize(run_config.vm_disk, run_config.resize)
-
     efi = run_config.vm_disk.with_suffix('.efi')
-    if run_config.force:
-        efi.unlink(missing_ok=True)
     rest_sock = run_config.sock
     if rest_sock.is_file():
         rest_sock.unlink()
@@ -602,7 +581,6 @@ def run(run_config: RunConfig) -> None:
             '--bootloader', f'efi,variable-store={efi},create',
         ])
 
-    mounts = []
     for src, dst in run_config.volumes:
         if not src.exists():
             src.mkdir()
@@ -611,22 +589,9 @@ def run(run_config: RunConfig) -> None:
             '--device',
             f'virtio-fs,sharedDir={src},mountTag={tag}',
         ])
-        mounts.append([
-            tag, dst, 'virtiofs'
-        ])
 
-    user_data = run_config.vm_disk.parent / 'user-data'
-    if not run_config.force and user_data.is_file():
-        cmd.extend(['--cloud-init', f'{user_data}'])
-    elif mounts or run_config.user_data.is_file():
-        with user_data.open('w') as f:
-            if run_config.user_data.is_file():
-                f.write(run_config.user_data.read_text())
-            else:
-                f.write('#cloud-config\n')
-            if mounts:
-                f.write(f'\nmounts: {json.dumps(mounts)}\n')
-            f.flush()
+    user_data = run_config.vm_storage / 'user-data'
+    if user_data.is_file():
         cmd.extend(['--cloud-init', f'{user_data}'])
 
     if is_mac or run_config.gui:
@@ -675,6 +640,70 @@ def run(run_config: RunConfig) -> None:
         pid.unlink(missing_ok=True)
 
 
+def run(run_config: RunConfig) -> None:
+    """Create and start a new VM"""
+    is_new = not run_config.vm_disk.is_file()
+
+    run_config.storage.mkdir(exist_ok=True)
+    run_config.vm_storage.mkdir(exist_ok=True)
+    if run_config.force and run_config.src_image:
+        run_config.vm_disk.unlink(missing_ok=True)
+
+    src_image = run_config.src_image
+    if src_image:
+        if run_config.vm_disk.is_file():
+            raise ValueError(f'{run_config.vm_disk} already exists')
+
+        if src_image.is_dir() and src_image.suffix == '.bundle':
+            for file in ('AuxiliaryStorage', 'HardwareModel',
+                         'MachineIdentifier'):
+                shutil.copy2(src_image / file, run_config.vm_storage)
+
+            src_image = src_image.joinpath(  # type: ignore[union-attr]
+                'Disk.img'
+            )
+
+        rc = clonefile(
+            bytes(src_image),
+            bytes(run_config.vm_disk),
+            CLONE_NOFOLLOW
+        )
+        if rc == -1:
+            raise OSError(
+                f'Could not clone {src_image} to '
+                f'{run_config.vm_disk}'
+            )
+
+    if run_config.resize and (is_new or run_config.force):
+        resize(run_config.vm_disk, run_config.resize)
+
+    if run_config.force:
+        efi = run_config.vm_disk.with_suffix('.efi')
+        efi.unlink(missing_ok=True)
+
+    mounts = []
+    for src, dst in run_config.volumes:
+        tag = dst.replace(os.sep, '-')
+        mounts.append([
+            tag, dst, 'virtiofs'
+        ])
+
+    user_data = run_config.user_data
+    persistent_user_data = run_config.vm_storage / 'user-data'
+    if mounts or (user_data and user_data.is_file()):
+        with persistent_user_data.open('w') as f:
+            if user_data and user_data.is_file():
+                f.write(user_data.read_text())
+            else:
+                f.write('#cloud-config\n')
+            if mounts:
+                f.write(f'\nmounts: {json.dumps(mounts)}\n')
+            f.flush()
+
+    run_config.write()
+    start(run_config)
+
+
 @contextlib.contextmanager
 def _repair_stdin():
     fd = sys.stdin.fileno()
@@ -699,11 +728,11 @@ def _verify_vfkit() -> None:
 
 def main(argv: list[str] | None = None) -> None:
     _verify_vfkit()
-    run_config = parse_args(argv)
 
     try:
+        action, run_config = parse_args(argv)
         with _repair_stdin():
-            run_config.action(run_config)  # type: ignore[misc]
+            action(run_config)  # type: ignore[misc]
     except KeyboardInterrupt:
         pass
     except RuntimeError as e:
