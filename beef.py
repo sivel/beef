@@ -476,15 +476,15 @@ def get_vm_ip(mac) -> str:
 
 
 @dataclass(kw_only=True, slots=True)
-class Partition:
+class _Partition:
     bootable: bool
     type: int
     start_lba: int
     sectors: int
 
 
-def _parse_partition_entry(entry: bytes) -> Partition:
-    return Partition(
+def _parse_partition_entry(entry: bytes) -> _Partition:
+    return _Partition(
         bootable=entry[0] == 0x80,
         type=entry[4],
         start_lba=struct.unpack_from("<I", entry, 8)[0],
