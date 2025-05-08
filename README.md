@@ -20,7 +20,7 @@ This project uses [vfkit](https://github.com/crc-org/vfkit).
 ```
 $ curl -LO https://download.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/aarch64/images/Fedora-Cloud-Base-AmazonEC2-42-1.1.aarch64.raw.xz
 $ unxz -T0 Fedora-Cloud-Base-AmazonEC2-42-1.1.aarch64.raw.xz
-$ beef run -d fedora42 Fedora-Cloud-Base-AmazonEC2-42-1.1.aarch64.raw
+$ beef run fedora42 Fedora-Cloud-Base-AmazonEC2-42-1.1.aarch64.raw
 {
     "canHardStop": true,
     "canPause": true,
