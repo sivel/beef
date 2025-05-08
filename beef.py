@@ -84,8 +84,7 @@ def storage_completer(
 
 
 def generate_laa_mac() -> str:
-    first_byte = random.randint(0x00, 0xFF)
-    first_byte = (first_byte & 0b11111100) | 0b00000010
+    first_byte = random.randint(0x00, 0xFF) & 0b11111100 | 0b00000010
     mac = [first_byte] + [random.randint(0x00, 0xFF) for _ in range(5)]
     return ':'.join(f'{b:02x}' for b in mac)
 
