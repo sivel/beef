@@ -7,7 +7,7 @@ This project uses [vfkit](https://github.com/crc-org/vfkit).
 
 `beef` adds some syntactic sugar on top of managing the lifecycle of VMs running through `vfkit` such as:
 
-1. `run`, `start`, `stop`, `rm`, `status`, and `ls` commands
+1. `run`, `start`, `stop`, `rm`, `status`, `ls`, `get` and `set` commands
 1. cloning and extending source raw image files
 1. state saving for re-launching an existing VM by name
 1. abstraction of complex arguments required for configuring VMs
