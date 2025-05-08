@@ -31,7 +31,6 @@ import functools
 import json
 import os
 import pathlib
-import pickle
 import random
 import re
 import shutil
@@ -222,10 +221,6 @@ class RunConfig:
         if not state_file.is_file():
             raise ValueError(f'No such VM: {state_file.parent.name}')
         with state_file.open('rb') as f:
-            if f.read(1) == b'\x80':
-                f.seek(0)
-                return cls(**pickle.load(f))
-            f.seek(0)
             return cls(**json.load(f))
 
 
