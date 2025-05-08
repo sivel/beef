@@ -35,6 +35,7 @@ import random
 import re
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import termios
@@ -475,6 +476,40 @@ def get_vm_ip(mac) -> str:
     return 'UNKNOWN'
 
 
+@dataclass(kw_only=True, slots=True)
+class Partition:
+    bootable: bool
+    type: int
+    start_lba: int
+    sectors: int
+
+
+def _parse_partition_entry(entry: bytes) -> Partition:
+    return Partition(
+        bootable=entry[0] == 0x80,
+        type=entry[4],
+        start_lba=struct.unpack_from("<I", entry, 8)[0],
+        sectors=struct.unpack_from("<I", entry, 12)[0],
+    )
+
+
+def _has_valid_mbr(disk: pathlib.Path) -> bool:
+    with disk.open('rb') as f:
+        data = f.read(512)
+
+    if data[510:512] != b'\x55\xAA':
+        return False
+
+    for i in range(4):
+        offset = i * 16
+        entry = data[446 + offset:446 + offset + 16]
+        partition = _parse_partition_entry(entry)
+        if partition.type != 0 and partition.sectors != 0:
+            return True
+
+    return False
+
+
 def resize(vm_disk, size):
     current = vm_disk.stat().st_size
     if size.isdigit():
@@ -775,17 +810,21 @@ def run(run_config: RunConfig) -> None:
         run_config.vm_disk.unlink(missing_ok=True)
 
     src_image = run_config.src_image
+    is_bundle = (
+        src_image and src_image.is_dir() and src_image.suffix == '.bundle'
+    )
     if src_image:
         if run_config.vm_disk.is_file():
             raise ValueError(f'{run_config.vm_disk} already exists')
 
-        if src_image.is_dir() and src_image.suffix == '.bundle':
-            for file in ('AuxiliaryStorage', 'HardwareModel',
-                         'MachineIdentifier'):
-                shutil.copy2(src_image / file, run_config.vm_storage)
-
+        if is_bundle:
             src_image = src_image.joinpath(
                 'Disk.img'
+            )
+
+        if not _has_valid_mbr(src_image):
+            raise ValueError(
+                f'{src_image} does not appear to raw disk image'
             )
 
         rc = clonefile(
@@ -797,6 +836,14 @@ def run(run_config: RunConfig) -> None:
             raise OSError(
                 f'Could not clone {src_image} to '
                 f'{run_config.vm_disk}'
+            )
+
+    if run_config.src_image and is_bundle:
+        for file in ('AuxiliaryStorage', 'HardwareModel',
+                     'MachineIdentifier'):
+            shutil.copy2(
+                run_config.src_image / file,
+                run_config.vm_storage
             )
 
     if run_config.resize:
