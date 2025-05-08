@@ -159,6 +159,9 @@ class RunConfig:
 
     def _parse_volumes(self, value):
         volumes = []
+        if value == [None]:
+            return volumes
+
         for v in value:
             if isinstance(v, (list, tuple)):
                 if isinstance(v[0], pathlib.Path):
@@ -207,10 +210,14 @@ class RunConfig:
     def state_file(self) -> pathlib.Path:
         return self.storage / self.vm / 'config.json'
 
-    def write(self) -> None:
+    def asdict(self) -> dict[str, t.Any]:
         run_config = asdict(self)
         run_config.pop('force')
         run_config.pop('attach')
+        return run_config
+
+    def write(self) -> None:
+        run_config = self.asdict()
         state_file = self.state_file
         state_file.parent.mkdir(exist_ok=True)
         with (state_file).open('w') as f:
@@ -224,13 +231,85 @@ class RunConfig:
             return cls(**json.load(f))
 
 
+def _settable_parser(defaults: bool = True) -> argparse.ArgumentParser:
+    arguments: list[tuple[tuple[str, ...], dict[str, t.Any]]] = [
+        (
+            ('--resize',),
+            {
+                'default': Resize('+10'),
+                'help': (
+                    'Resize the disk in GB. Can be exact, or start with + '
+                    'to indicate a relative size change'
+                ),
+                'type': Resize,
+            },
+        ),
+        (
+            ('--cpus',),
+            {
+                'default': 2,
+                'help': 'Number of CPUs',
+                'type': int,
+            },
+        ),
+        (
+            ('--memory',),
+            {
+                'default': 2048,
+                'help': 'Amount of memory in MB',
+                'type': int,
+            },
+        ),
+        (
+            ('--user-data',),
+            {
+                'default': pathlib.Path.home() / 'vms' / 'user-data',
+                'help': 'Path to cloud-init user_data file',
+                'type': pathlib.Path,
+            },
+        ),
+        (
+            ('--volume', '-v'),
+            {
+                'dest': 'volumes',
+                'action': 'append',
+                'default': [],
+                'help': (
+                    'Volumes to mount into the VM. May be specified multiple '
+                    'times'
+                ),
+                'metavar': 'src:dst',
+            },
+        ),
+        (
+            ('--mac',),
+            {
+                'default': generate_laa_mac(),
+                'help': 'MAC address',
+            },
+        ),
+    ]
+
+    parser = argparse.ArgumentParser(add_help=False)
+    for args, kwargs in arguments:
+        if not defaults:
+            if isinstance(kwargs['default'], list):
+                kwargs['nargs'] = '?'
+                kwargs['const'] = None
+            kwargs['default'] = None
+        elif kwargs.get('default'):
+            kwargs['help'] += '. Default: %(default)s'
+        parser.add_argument(*args, **kwargs)
+    return parser
+
+
 def parse_args(
         argv: list[str] | None = None
 ) -> tuple[t.Callable[[RunConfig], None], RunConfig]:
     vm_parser = argparse.ArgumentParser(add_help=False)
     vm_parser.add_argument(  # type: ignore[attr-defined]
         'vm',
-        help='Name of VM'
+        help='Name of VM',
     ).completer = storage_completer
 
     storage_parser = argparse.ArgumentParser(add_help=False)
@@ -265,67 +344,23 @@ def parse_args(
     parser.add_argument(
         '--version',
         action='version',
-        version=f'%(prog)s {__version__}'
+        version=f'%(prog)s {__version__}',
     )
 
     subparsers = parser.add_subparsers(dest='action', required=True)
     run_parser = subparsers.add_parser(
         'run',
         help=run.__doc__,
-        parents=parents + [run_common_parser],
+        parents=parents + [_settable_parser(), run_common_parser],
     )
     run_parser.set_defaults(
         action=run,
     )
-
     run_parser.add_argument(
         'src_image',
         nargs='?',
         help='Path to raw cloud image',
         type=pathlib.Path,
-    )
-    run_parser.add_argument(
-        '--resize',
-        default=Resize('+10'),
-        help=(
-            'Resize the disk in GB. Can be exact, or start with + '
-            'to indicate a relative size change. Default: %(default)s'
-        ),
-        type=Resize,
-    )
-    run_parser.add_argument(
-        '--cpus',
-        default=2,
-        help='Number of CPUs. Default %(default)s',
-        type=int,
-    )
-    run_parser.add_argument(
-        '--memory',
-        default=2048,
-        help='Amount of memory in MB. Default %(default)s',
-        type=int,
-    )
-    run_parser.add_argument(
-        '--user-data',
-        default=pathlib.Path.home() / 'vms' / 'user-data',
-        help='Path to cloud-init user_data file. Default %(default)s',
-        type=pathlib.Path,
-    )
-    run_parser.add_argument(
-        '--volume', '-v',
-        dest='volumes',
-        action='append',
-        default=[],
-        help=(
-            'Volumes to mount into the VM. May be specified multiple '
-            'times'
-        ),
-        metavar='src:dst',
-    )
-    run_parser.add_argument(
-        '--mac',
-        default=generate_laa_mac(),
-        help='MAC address. Default: %(default)s',
     )
     run_parser.add_argument(
         '--force', '-f',
@@ -336,7 +371,7 @@ def parse_args(
     run_parser.add_argument(
         '--state-file',
         type=pathlib.Path,
-        help=argparse.SUPPRESS
+        help=argparse.SUPPRESS,
     )
 
     subparsers.add_parser(
@@ -353,7 +388,7 @@ def parse_args(
             help=func.__doc__,
             parents=parents,
         ).set_defaults(
-            action=func
+            action=func,
         )
 
     subparsers.add_parser(  # type: ignore[attr-defined]
@@ -362,9 +397,25 @@ def parse_args(
         parents=[storage_parser],
     ).add_argument(
         '--json',
-        action='store_true'
+        action='store_true',
     ).container.set_defaults(
-        action=ls
+        action=ls,
+    )
+
+    subparsers.add_parser(
+        'set',
+        help=reconfigure.__doc__,
+        parents=parents + [_settable_parser(defaults=False)],
+    ).set_defaults(
+        action=reconfigure,
+    )
+
+    subparsers.add_parser(
+        'get',
+        help=get.__doc__,
+        parents=parents,
+    ).set_defaults(
+        action=get,
     )
 
     if HAS_ARGCOMPLETE:
@@ -380,7 +431,7 @@ def parse_args(
             run_config.attach = args.attach
         else:
             run_config = RunConfig.from_argparse(args)
-    elif action is start:
+    elif action in {start, get}:
         run_config = RunConfig.read(
             RunConfig.from_argparse(args).state_file
         )
@@ -425,11 +476,13 @@ def get_vm_ip(mac) -> str:
 
 
 def resize(vm_disk, size):
+    current = vm_disk.stat().st_size
     if size.isdigit():
         new = int(size) * 1024**3
     else:
-        current = vm_disk.stat().st_size
         new = current + int(size) * 1024**3
+    if new < current:
+        raise ValueError('resize cannot be smaller than disk image')
     os.truncate(vm_disk, new)
 
 
@@ -453,12 +506,19 @@ def _make_sock(run_config: RunConfig):
         yield sock
 
 
+def _check_running(run_config: RunConfig) -> None:
+    pid = run_config.pid
+    if pid.is_file():
+        status(run_config, ip=False, ret=True)
+        if pid.is_file():
+            raise RuntimeError(
+                f'{run_config.vm}[{int(pid.read_text())}] is running'
+            )
+
+
 def rm(run_config: RunConfig) -> None:
     """Remove a VM"""
-    if run_config.pid.is_file():
-        raise RuntimeError(
-            f'{run_config.vm} is running'
-        )
+    _check_running(run_config)
     shutil.rmtree(run_config.vm_disk.parent)
 
 
@@ -536,15 +596,69 @@ def stop(run_config: RunConfig) -> None:
     run_config.sock.unlink()
 
 
+def _write_user_data(run_config: RunConfig) -> pathlib.Path | None:
+    mounts = []
+    for src, dst in run_config.volumes:
+        tag = dst.replace(os.sep, '-')
+        mounts.append([
+            tag, dst, 'virtiofs'
+        ])
+
+    user_data = run_config.user_data
+    persistent_user_data = run_config.vm_storage / 'user-data'
+    if mounts or (user_data and user_data.is_file()):
+        with persistent_user_data.open('w') as f:
+            if user_data and user_data.is_file():
+                f.write(user_data.read_text())
+            else:
+                f.write('#cloud-config\n')
+            if mounts:
+                f.write(f'\nmounts: {json.dumps(mounts)}\n')
+            f.flush()
+
+        return persistent_user_data
+
+    return None
+
+
+def get(run_config: RunConfig) -> None:
+    """Get VM configuration"""
+    print(
+        json.dumps(
+            run_config.asdict(),
+            indent=4,
+            cls=_JSONEncoder,
+        )
+    )
+
+
+def reconfigure(run_config: RunConfig) -> None:
+    """Reconfigure VM"""
+    _check_running(run_config)
+
+    current = RunConfig.read(run_config.state_file)
+
+    for f in fields(run_config):
+        value = getattr(run_config, f.name)
+        if value is None:
+            continue
+        if f.name == 'resize' and value and current.resize:
+            if value[0] == '+':
+                value = Resize(int(current.resize) + int(value))
+        setattr(current, f.name, value)
+
+    if run_config.resize:
+        resize(current.vm_disk, current.resize)
+
+    if run_config.user_data or run_config.volumes is not None:
+        _write_user_data(current)
+
+    current.write()
+
+
 def start(run_config: RunConfig) -> None:
     """Start an existing VM"""
-    pid = run_config.pid
-    if pid.is_file():
-        status(run_config, ip=False, ret=True)
-        if pid.is_file():
-            raise RuntimeError(
-                f'{run_config.vm}[{int(pid.read_text())}] is already running'
-            )
+    _check_running(run_config)
 
     is_mac = run_config.vm_storage.joinpath('AuxiliaryStorage').exists()
 
@@ -633,13 +747,15 @@ def start(run_config: RunConfig) -> None:
     if rc is not None:
         stdout, _ = p.communicate()
         rest_sock.unlink(missing_ok=True)
-        pid.unlink(missing_ok=True)
+        run_config.pid.unlink(missing_ok=True)
         raise RuntimeError(f'{run_config.vm} failed to start: {stdout}')
 
-    print(json.dumps(
-        status(run_config, ret=True),
-        indent=4,
-    ))
+    print(
+        json.dumps(
+            status(run_config, ret=True),
+            indent=4,
+        )
+    )
 
     if not run_config.attach:
         return
@@ -648,13 +764,11 @@ def start(run_config: RunConfig) -> None:
         p.wait()
     finally:
         rest_sock.unlink(missing_ok=True)
-        pid.unlink(missing_ok=True)
+        run_config.pid.unlink(missing_ok=True)
 
 
 def run(run_config: RunConfig) -> None:
     """Create and start a new VM"""
-    is_new = not run_config.vm_disk.is_file()
-
     run_config.storage.mkdir(exist_ok=True)
     run_config.vm_storage.mkdir(exist_ok=True)
     if run_config.force and run_config.src_image:
@@ -685,31 +799,14 @@ def run(run_config: RunConfig) -> None:
                 f'{run_config.vm_disk}'
             )
 
-    if run_config.resize and (is_new or run_config.force):
+    if run_config.resize:
         resize(run_config.vm_disk, run_config.resize)
 
     if run_config.force:
         efi = run_config.vm_disk.with_suffix('.efi')
         efi.unlink(missing_ok=True)
 
-    mounts = []
-    for src, dst in run_config.volumes:
-        tag = dst.replace(os.sep, '-')
-        mounts.append([
-            tag, dst, 'virtiofs'
-        ])
-
-    user_data = run_config.user_data
-    persistent_user_data = run_config.vm_storage / 'user-data'
-    if mounts or (user_data and user_data.is_file()):
-        with persistent_user_data.open('w') as f:
-            if user_data and user_data.is_file():
-                f.write(user_data.read_text())
-            else:
-                f.write('#cloud-config\n')
-            if mounts:
-                f.write(f'\nmounts: {json.dumps(mounts)}\n')
-            f.flush()
+    _write_user_data(run_config)
 
     run_config.write()
     start(run_config)
