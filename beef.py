@@ -343,7 +343,7 @@ def parse_args(
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--version',
+        '--version', '-V',
         action='version',
         version=f'%(prog)s {__version__}',
     )
