@@ -431,7 +431,7 @@ def parse_args(
             run_config.attach = args.attach
         else:
             run_config = RunConfig.from_argparse(args)
-    elif action in {start, get}:
+    elif getattr(action, '_requires_state', False):
         run_config = RunConfig.read(
             RunConfig.from_argparse(args).state_file
         )
@@ -550,6 +550,13 @@ def _check_running(run_config: RunConfig) -> None:
             )
 
 
+def _requires_state(
+        func: t.Callable[..., t.Any]
+) -> t.Callable[..., t.Any]:
+    func._requires_state = True  # type: ignore[attr-defined]
+    return func
+
+
 def rm(run_config: RunConfig) -> None:
     """Remove a VM"""
     _check_running(run_config)
@@ -578,6 +585,7 @@ def ls(run_config: RunConfig, use_json=False) -> None:
         print(json.dumps(out, indent=4))
 
 
+@_requires_state
 def status(
         run_config: RunConfig,
         ip: bool = True,
@@ -655,6 +663,7 @@ def _write_user_data(run_config: RunConfig) -> pathlib.Path | None:
     return None
 
 
+@_requires_state
 def get(run_config: RunConfig) -> None:
     """Get VM configuration"""
     print(
@@ -690,6 +699,7 @@ def reconfigure(run_config: RunConfig) -> None:
     current.write()
 
 
+@_requires_state
 def start(run_config: RunConfig) -> None:
     """Start an existing VM"""
     _check_running(run_config)
