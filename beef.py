@@ -199,8 +199,8 @@ class RunConfig:
         ).with_suffix('.raw').resolve()
 
     @functools.cached_property
-    def sock(self) -> pathlib.Path:
-        return self.vm_disk.with_suffix('.sock')
+    def rest_sock(self) -> pathlib.Path:
+        return self.vm_storage / 'rest.sock'
 
     @functools.cached_property
     def pid(self) -> pathlib.Path:
@@ -531,7 +531,7 @@ def _make_sock(run_config: RunConfig):
             f'{run_config.vm} is not running'
         )
 
-    rest_sock = run_config.sock
+    rest_sock = run_config.rest_sock
     if not rest_sock.is_socket():
         raise RuntimeError('rest sock is missing')
 
@@ -560,7 +560,7 @@ def _requires_state(
 def rm(run_config: RunConfig) -> None:
     """Remove a VM"""
     _check_running(run_config)
-    shutil.rmtree(run_config.vm_disk.parent)
+    shutil.rmtree(run_config.vm_storage)
 
 
 def ls(run_config: RunConfig, use_json=False) -> None:
@@ -606,7 +606,7 @@ def status(
         data = {"state": "Stopped"}
         if run_config.pid.is_file():
             run_config.pid.unlink(missing_ok=True)
-            run_config.sock.unlink(missing_ok=True)
+            run_config.rest_sock.unlink(missing_ok=True)
     else:
         rc = 0
         data = json.loads(resp.partition('\r\n\r\n')[2])
@@ -635,7 +635,7 @@ def stop(run_config: RunConfig) -> None:
         if sock.recv(21) != b'HTTP/1.1 202 Accepted':
             raise RuntimeError(f'Could not issue stop to {run_config.vm}')
     run_config.pid.unlink()
-    run_config.sock.unlink()
+    run_config.rest_sock.unlink()
 
 
 def _write_user_data(run_config: RunConfig) -> pathlib.Path | None:
@@ -712,7 +712,7 @@ def start(run_config: RunConfig) -> None:
         )
 
     efi = run_config.vm_disk.with_suffix('.efi')
-    rest_sock = run_config.sock
+    rest_sock = run_config.rest_sock
     if rest_sock.is_file():
         rest_sock.unlink()
 
