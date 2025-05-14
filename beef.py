@@ -67,11 +67,11 @@ _DEFAULT_GUI_RESOLUTION = '1024x800'
 
 
 class _JSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, pathlib.Path):
-            return str(obj)
+    def default(self, o):
+        if isinstance(o, pathlib.Path):
+            return str(o)
 
-        return super().default(obj)
+        return super().default(o)
 
 
 def storage_completer(
