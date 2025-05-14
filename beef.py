@@ -147,15 +147,13 @@ class RunConfig:
     def _parse_volumes(
             self,
             value: list[str]
-    ) -> list[tuple[pathlib.Path, str]]:
-        ...
+    ) -> list[tuple[pathlib.Path, str]]: ...
 
     @t.overload
     def _parse_volumes(
             self,
             value: list[tuple[pathlib.Path, str]]
-    ) -> list[tuple[pathlib.Path, str]]:
-        ...
+    ) -> list[tuple[pathlib.Path, str]]: ...
 
     def _parse_volumes(self, value):
         volumes = []
@@ -210,7 +208,7 @@ class RunConfig:
     def state_file(self) -> pathlib.Path:
         return self.storage / self.vm / 'config.json'
 
-    def asdict(self) -> dict[str, t.Any]:
+    def asdict(self) -> dict[str, object]:
         run_config = asdict(self)
         run_config.pop('force')
         run_config.pop('attach')
@@ -590,9 +588,9 @@ def status(
         run_config: RunConfig,
         ip: bool = True,
         ret: bool = False
-) -> dict[str, t.Any] | t.NoReturn:
+) -> dict[str, object] | t.NoReturn:
     """Get the status of a VM"""
-    data: dict[str, t.Any]
+    data: dict[str, object]
     try:
         with _make_sock(run_config) as sock:
             sock.sendall(textwrap.dedent('''
