@@ -7,8 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
-
+  test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -36,5 +35,13 @@ jobs:
     - name: pylint
       run: |
         pylint -E .
+
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
     - name: build and inspect
       uses: hynek/build-and-inspect-python-package@v2
