@@ -767,7 +767,10 @@ def start(run_config: RunConfig) -> None:
     if run_config.attach:
         cmd.extend(['--device', 'virtio-serial,stdio'])
 
-    popen_kwargs: dict[str, t.Any] = {'text': True}
+    popen_kwargs: dict[str, t.Any] = {
+        'text': True,
+        'env': os.environ | {'TMPDIR': str(run_config.vm_storage)},
+    }
     if not run_config.attach:
         popen_kwargs.update({
             'start_new_session': True,
