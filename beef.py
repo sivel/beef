@@ -261,7 +261,10 @@ def _settable_parser(defaults: bool = True) -> argparse.ArgumentParser:
         (
             ('--user-data',),
             {
-                'default': pathlib.Path.home() / 'vms' / 'user-data',
+                'default': os.getenv(
+                    'BEEF_USER_DATA',
+                    pathlib.Path.home() / 'vms' / 'user-data',
+                ),
                 'help': 'Path to cloud-init user_data file',
                 'type': pathlib.Path,
             },
@@ -313,7 +316,10 @@ def parse_args(
     storage_parser = argparse.ArgumentParser(add_help=False)
     storage_parser.add_argument(
         '--storage',
-        default=pathlib.Path.home() / 'vms' / 'storage',
+        default=os.getenv(
+            'BEEF_STORAGE',
+            pathlib.Path.home() / 'vms' / 'storage',
+        ),
         type=pathlib.Path,
         help='Path to vmstorage dir. Default: %(default)s',
     )
