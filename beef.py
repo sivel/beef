@@ -334,7 +334,8 @@ def parse_args(
     run_common_parser.add_argument(
         '--gui',
         nargs='?',
-        const=_DEFAULT_GUI_RESOLUTION,
+        type=Resolution,
+        const=Resolution(_DEFAULT_GUI_RESOLUTION),
         help=(
             'Enable GUI. Automatically enabled if VM is macOS. '
             'Defaults: %(const)s'
@@ -827,33 +828,35 @@ def run(run_config: RunConfig) -> None:
         run_config.vm_disk.unlink(missing_ok=True)
 
     src_image = run_config.src_image
+    if not src_image:
+        raise ValueError('src_image is required to create a VM')
+
     is_bundle = (
         src_image and src_image.is_dir() and src_image.suffix == '.bundle'
     )
-    if src_image:
-        if run_config.vm_disk.is_file():
-            raise ValueError(f'{run_config.vm_disk} already exists')
+    if run_config.vm_disk.is_file():
+        raise ValueError(f'{run_config.vm_disk} already exists')
 
-        if is_bundle:
-            src_image = src_image.joinpath(
-                'Disk.img'
-            )
-
-        if not _has_valid_mbr(src_image):
-            raise ValueError(
-                f'{src_image} does not appear to raw disk image'
-            )
-
-        rc = clonefile(
-            bytes(src_image),
-            bytes(run_config.vm_disk),
-            CLONE_NOFOLLOW
+    if is_bundle:
+        src_image = src_image.joinpath(
+            'Disk.img'
         )
-        if rc == -1:
-            raise OSError(
-                f'Could not clone {src_image} to '
-                f'{run_config.vm_disk}'
-            )
+
+    if not _has_valid_mbr(src_image):
+        raise ValueError(
+            f'{src_image} does not appear to raw disk image'
+        )
+
+    rc = clonefile(
+        bytes(src_image),
+        bytes(run_config.vm_disk),
+        CLONE_NOFOLLOW
+    )
+    if rc == -1:
+        raise OSError(
+            f'Could not clone {src_image} to '
+            f'{run_config.vm_disk}'
+        )
 
     if run_config.src_image and is_bundle:
         for file in ('AuxiliaryStorage', 'HardwareModel',
