@@ -40,5 +40,5 @@ This example assumes that you have a `VM.bundle`. This can be created using [htt
 Note: macOS requires running with `--gui`
 
 ```
-$ beef run --gui macos VM.bundle
+$ beef run --gui -- macos VM.bundle
 ```
