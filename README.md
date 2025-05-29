@@ -37,7 +37,7 @@ $ beef run fedora42 Fedora-Cloud-Base-AmazonEC2-42-1.1.aarch64.raw
 
 This example assumes that you have a `VM.bundle`. This can be created using [https://github.com/Code-Hex/vz/tree/main/example/macOS](https://github.com/Code-Hex/vz/tree/main/example/macOS).
 
-Note: macOS requires running with `--gui`
+Note: macOS requires running with `--gui`, if omitted, it is implicitly assumed.
 
 ```
 $ beef run --gui -- macos VM.bundle
