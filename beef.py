@@ -440,7 +440,8 @@ def parse_args(
         run_config = RunConfig.read(
             RunConfig.from_argparse(args).state_file
         )
-        run_config.attach = args.attach
+        with contextlib.suppress(AttributeError):
+            run_config.attach = args.attach
     elif action is ls:
         args.vm = ''
         run_config = RunConfig.from_argparse(args)
