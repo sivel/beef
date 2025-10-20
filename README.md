@@ -16,6 +16,15 @@ A simple VM lifecycle manager for macOS and Linux.
 1. abstraction of complex arguments required for configuring VMs
 1. abstraction of running Linux and macOS VMs
 
+## Image Format
+
+`beef` supports raw disk images only (`.raw`, `.img`). QCOW2, VMDK, and other formats are not supported.
+
+You can convert other formats to raw using `qemu-img`:
+```bash
+qemu-img convert -f qcow2 -O raw input.qcow2 output.raw
+```
+
 ## Setup
 
 ### macOS
