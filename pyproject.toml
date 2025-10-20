@@ -7,9 +7,9 @@ name = "beef"
 authors = [
     {name = "Matt Martz", email = "matt@sivel.net"},
 ]
-description = "The Beefcake macOS Virtualization lifecycle manager"
+description = "The Beefcake Virtualization lifecycle manager"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "MIT"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -18,11 +18,12 @@ classifiers = [
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
     "Natural Language :: English",
+	"Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: System :: Installation/Setup",
     "Topic :: System :: Systems Administration",
@@ -41,3 +42,14 @@ beef = "beef:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "beef.__version__"}
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "PL",
+]

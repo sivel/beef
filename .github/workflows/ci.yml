@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
 
     steps:
     - uses: actions/checkout@v4
@@ -23,18 +23,15 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install mypy pylint argcomplete
+        python -m pip install pyrefly argcomplete
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: ruff
       uses: astral-sh/ruff-action@v3
       with:
         version: latest
-    - name: mypy
+    - name: pyrefly
       run: |
-        mypy .
-    - name: pylint
-      run: |
-        pylint -E .
+        pyrefly check
 
   build:
     runs-on: ubuntu-latest
