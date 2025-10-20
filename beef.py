@@ -58,6 +58,7 @@ __version__ = '0.0.1'
 
 _MBR_BOOTABLE_FLAG = 0x80
 
+clonefile: t.Callable[[bytes, bytes, int], int]
 if sys.platform == 'darwin':
     _LIBC = ctypes.CDLL(None)
     clonefile = _LIBC.clonefile
